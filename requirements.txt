@@ -1,2 +1,4 @@
 pywin32>=306
 watchdog>=6.0
+flask>=3.0
+requests>=2.32
