@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "运行 MTP 备份",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/mtp_backup.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}
