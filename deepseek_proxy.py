@@ -38,6 +38,14 @@ PROXY_PORT = 8742
 DEEPSEEK_API_BASE = "https://api.deepseek.com"
 DEEPSEEK_API_KEY  = os.environ.get("DEEPSEEK_API_KEY", "")
 
+# 本机代理配置（解决地区限制）
+# 自动读取系统代理，也可手动指定，如 "http://127.0.0.1:7897"
+_sys_proxy = os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy") or "http://127.0.0.1:7897"
+REQUESTS_PROXIES = {
+    "http":  _sys_proxy,
+    "https": _sys_proxy,
+}
+
 # Claude 模型名 -> DeepSeek 模型名 映射
 MODEL_MAP = {
     # Claude 3.x 系列 -> deepseek-chat（V3）
@@ -224,17 +232,26 @@ def messages():
     # 构建 DeepSeek 请求体
     messages_list = anthropic_to_openai_messages(body)
     ds_body = {
-        "model":       ds_model,
-        "messages":    messages_list,
-        "max_tokens":  body.get("max_tokens", 8192),
-        "temperature": body.get("temperature", 1.0),
-        "stream":      is_stream,
+        "model":    ds_model,
+        "messages": messages_list,
+        "max_tokens": min(int(body.get("max_tokens", 8192)), 8192),
+        "stream":   is_stream,
     }
 
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type":  "application/json",
     }
+
+    # 修复：temperature 超出范围时 DeepSeek 返回 400，限制在 [0, 2]
+    temp = float(body.get("temperature", 1.0))
+    ds_body["temperature"] = max(0.0, min(2.0, temp))
+
+    # 修复：top_p 如果存在也需要限制
+    if "top_p" in body:
+        ds_body["top_p"] = max(0.0, min(1.0, float(body["top_p"])))
+
+    logger.debug(f"转发请求体: {json.dumps(ds_body, ensure_ascii=False)[:300]}")
 
     try:
         if is_stream:
@@ -245,8 +262,12 @@ def messages():
                 json=ds_body,
                 stream=True,
                 timeout=120,
+                proxies=REQUESTS_PROXIES,
             )
-            ds_resp.raise_for_status()
+            if not ds_resp.ok:
+                err = ds_resp.text
+                logger.error(f"DeepSeek 流式错误 {ds_resp.status_code}: {err}")
+                return jsonify({"error": {"type": "api_error", "message": err}}), 502
             return Response(
                 stream_openai_to_anthropic(ds_resp, claude_model),
                 content_type="text/event-stream",
@@ -259,8 +280,12 @@ def messages():
                 headers=headers,
                 json=ds_body,
                 timeout=120,
+                proxies=REQUESTS_PROXIES,
             )
-            ds_resp.raise_for_status()
+            if not ds_resp.ok:
+                err = ds_resp.text
+                logger.error(f"DeepSeek 错误 {ds_resp.status_code}: {err}")
+                return jsonify({"error": {"type": "api_error", "message": err}}), 502
             anthropic_resp = openai_to_anthropic_response(ds_resp.json(), claude_model)
             return jsonify(anthropic_resp)
 
