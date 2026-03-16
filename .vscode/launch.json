@@ -2,10 +2,18 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "运行 MTP 备份",
+            "name": "全量备份 (mtp_backup.py)",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/mtp_backup.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "增量监听 (mtp_watch.py)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/mtp_watch.py",
             "console": "integratedTerminal",
             "justMyCode": true
         }

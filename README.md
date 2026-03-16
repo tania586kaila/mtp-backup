@@ -122,14 +122,92 @@ python mtp_backup.py
 
 ```
 mtp-backup/
-├── mtp_backup.py       # 主程序（含完整注释）
+├── mtp_backup.py       # 一次性全量备份主程序
+├── mtp_watch.py        # 增量监听自动备份（文件变化时自动触发）
 ├── mtp_backup.ps1      # PowerShell 版本（备用，直接内联执行）
-├── requirements.txt    # Python 依赖
+├── requirements.txt    # Python 依赖（pywin32 + watchdog）
 ├── .vscode/
 │   └── launch.json     # VS Code 调试配置（F5 一键运行）
 ├── .gitignore
 └── README.md
 ```
+
+---
+
+## 增量监听自动备份（mtp_watch.py）
+
+### 功能
+
+| 功能 | 说明 |
+|------|------|
+| 实时监听 | 使用 watchdog 监听目录文件系统事件 |
+| 自动触发 | 新文件复制粘贴/创建/重命名时自动备份到 F50 |
+| 写入完成检测 | 轮询文件大小稳定后再传输，避免传输不完整文件 |
+| 防抖处理 | 同一文件 3 秒内重复事件只处理一次 |
+| 异步传输 | 每个文件在独立线程中传输，不阻塞监听主线程 |
+| 临时文件过滤 | 自动忽略 `.tmp`、`.part`、`~$` 等临时文件 |
+| 多目录支持 | 可同时监听多个本地目录 |
+
+### 监听事件
+
+| 事件 | 触发场景 |
+|------|---------|
+| `on_created` | 复制粘贴文件、下载完成、新建文件 |
+| `on_moved` | 软件先写临时文件再重命名（如 Office、迅雷） |
+
+### 运行方式
+
+```bash
+# 前台运行（Ctrl+C 停止）
+python mtp_watch.py
+
+# 后台运行（写 PID 到 watch.pid）
+python mtp_watch.py --daemon
+```
+
+### 配置监听目录
+
+修改 `mtp_watch.py` 顶部 `CONFIG`：
+
+```python
+CONFIG = {
+    "watch_dirs": [
+        r"F:\share\sync",          # 监听目录（支持多个）
+        r"C:\Users\你的用户名\Downloads",
+    ],
+    "device_name": "F50",
+    "backup_root_name": "PC备份",
+    "date_format": "%Y%m%d",
+    "debounce_sec": 3.0,           # 防抖窗口（秒）
+    "copy_timeout_sec": 60,        # 单文件传输超时
+}
+```
+
+### 运行示例
+
+```
+[2026-03-16 22:10:00] INFO  - MTP Watch & Backup 启动
+[2026-03-16 22:10:00] INFO  - 监听目录: ['F:\\share\\sync']
+[2026-03-16 22:10:00] INFO  - 开始监听: F:\share\sync
+[2026-03-16 22:10:00] INFO  - 监听服务已启动，按 Ctrl+C 停止
+
+# 当有新文件复制到 F:\share\sync 时自动触发：
+[2026-03-16 22:15:32] INFO  - [CREATE] 检测到新文件: F:\share\sync\报告.docx
+[2026-03-16 22:15:34] INFO  - 开始备份: 报告.docx
+[2026-03-16 22:15:34] INFO  -   [COPY] 报告.docx
+[2026-03-16 22:15:36] INFO  -   [OK]   报告.docx -> F50\PC备份\20260316\sync\报告.docx
+```
+
+### 设置开机自启（可选）
+
+用 Windows 任务计划程序实现开机自动启动监听服务：
+
+1. 打开"任务计划程序" → 创建基本任务
+2. 触发器：计算机启动时
+3. 操作：启动程序
+   - 程序：`python`
+   - 参数：`C:\Users\Administrator\mtp-backup\mtp_watch.py --daemon`
+4. 勾选"无论用户是否登录都要运行"
 
 ---
 
